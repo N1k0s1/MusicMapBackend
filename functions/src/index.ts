@@ -11,6 +11,7 @@ import {onCall} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as crypto from "crypto";
 import * as admin from "firebase-admin";
+import axios from "axios";
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -29,8 +30,7 @@ db.settings({
 //   response.send("Hello from Firebase!");
 // });
 
-const API_KEY = "";
-const API_SECRET = "";
+
 
 interface LastFMAuthResponse {
   session: {
@@ -228,15 +228,33 @@ export const storeEmotion = onCall(async (request) => {
       timestamp: Date.now(),
     };
 
-    await db.collection("users")
+    // check if emotion already exists for track
+    const existingEmotion = await db.collection("users")
       .doc(sessionKey)
       .collection("emotions")
-      .add(emotionData);
+      .where("trackId", "==", trackId)
+      .limit(1)
+      .get();
+
+    if (!existingEmotion.empty) {
+      const docId = existingEmotion.docs[0].id;
+      await db.collection("users")
+        .doc(sessionKey)
+        .collection("emotions")
+        .doc(docId)
+        .update({...emotionData});
+    } else {
+      // crete new emotion
+      await db.collection("users")
+        .doc(sessionKey)
+        .collection("emotions")
+        .add(emotionData);
+    }
 
     return {success: true};
   } catch (error) {
     logger.error("error storing the emotion", error);
-    throw new Error("Failed successfully to store emotion"); // w error
+    throw new Error("Failed to store emotion");
   }
 });
 
@@ -251,8 +269,8 @@ export const getEmotions = onCall(async (request) => {
     // first check if the user's document exists
     const userDoc = await db.collection("users").doc(sessionKey).get();
     if (!userDoc.exists) {
-      logger.info("User document not found, creating new user document");
-      // create the user document
+      logger.info("User document not found creating new user document");
+      // create the new user's document
       await db.collection("users").doc(sessionKey).set({
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         lastLogin: admin.firestore.FieldValue.serverTimestamp(),
@@ -284,5 +302,77 @@ export const testFirestore = onCall(async (request) => {
     return {userIds};
   } catch (error: any) {
     return {error: error.message};
+  }
+});
+
+export const lastfmSearchforTracks = onCall(async (request) => {
+  const {query} = request.data;
+
+  if (!query) {
+    throw new Error("Query is required");
+  }
+
+  try {
+    const response = await axios.get("https://ws.audioscrobbler.com/2.0/", {
+      params: {
+        method: "track.search",
+        api_key: API_KEY,
+        format: "json",
+        track: query,
+      },
+    });
+    const tracks = response.data?.results?.trackmatches?.track || [];
+    for (const track of tracks) {
+      try {
+        const trackInfo = await axios.get("https://ws.audioscrobbler.com/2.0/", {
+          params: {
+            method: "track.getInfo",
+            api_key: API_KEY,
+            format: "json",
+            artist: track.artist,
+            track: track.name,
+            autocorrect: 1,
+          },
+        });
+        if (trackInfo.data?.track?.album?.image) {
+          track.image = trackInfo.data.track.album.image;
+        }
+      } catch (error) {
+        logger.error("Error fetching track info:", error);
+      }
+    }
+
+    const data = response.data;
+    if ("error" in data) {
+      logger.error("lastfm search tracks error:", data);
+      throw new Error(data.message || "Failed to search tracks");
+    }
+
+    if (!data.results?.trackmatches?.track) {
+      logger.error("Invalid response from lastfm", data);
+      throw new Error("Invalid response from lastfm");
+    }
+
+    return data;
+  } catch (error) {
+    logger.error("lastfm search tracks error:", error);
+    throw new Error("Failed to search tracks");
+  }
+});
+export const deleteEmotion = onCall(async (request) => {
+  const {sessionKey, emotionId} = request.data;
+  if (!sessionKey || !emotionId) {
+    throw new Error("Missing required fields");
+  }
+  try {
+    await db.collection("users")
+      .doc(sessionKey)
+      .collection("emotions")
+      .doc(emotionId)
+      .delete();
+    return {success: true};
+  } catch (error) {
+    logger.error("Error deleting emotion:", error);
+    throw new Error("Failed to delete emotion");
   }
 });
