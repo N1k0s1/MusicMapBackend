@@ -30,7 +30,8 @@ db.settings({
 //   response.send("Hello from Firebase!");
 // });
 
-
+const API_KEY = "b16e372685717c923f1072c36f987843";
+const API_SECRET = "9a217efb13aae3065580091fd04b00ff";
 
 interface LastFMAuthResponse {
   session: {
@@ -359,6 +360,29 @@ export const lastfmSearchforTracks = onCall(async (request) => {
     throw new Error("Failed to search tracks");
   }
 });
+export const deleteEmotionHistory = onCall(async (request) => {
+  const {sessionKey} = request.data;
+  if (!sessionKey) {
+    throw new Error("Missing required fields");
+  }
+  try {
+    const emotionsSnapshot = await db.collection("users")
+      .doc(sessionKey)
+      .collection("emotions")
+      .get();
+
+    const batch = db.batch();
+    emotionsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    return {success: true};
+  } catch (error) {
+    logger.error("Error deleting emotion:", error);
+    throw new Error("Failed to delete emotion from database");
+  }
+});
+
 export const deleteEmotion = onCall(async (request) => {
   const {sessionKey, emotionId} = request.data;
   if (!sessionKey || !emotionId) {
@@ -374,5 +398,21 @@ export const deleteEmotion = onCall(async (request) => {
   } catch (error) {
     logger.error("Error deleting emotion:", error);
     throw new Error("Failed to delete emotion");
+  }
+});
+
+export const deleteAccount = onCall(async (request) => {
+  const {sessionKey} = request.data;
+  if (!sessionKey) {
+    throw new Error("Missing required fields");
+  }
+  try {
+    await db.collection("users")
+      .doc(sessionKey)
+      .delete();
+    return {success: true};
+  } catch (error) {
+    logger.error("Error deleting account:", error);
+    throw new Error("Failed to delete account");
   }
 });
