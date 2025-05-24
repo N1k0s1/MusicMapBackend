@@ -297,15 +297,15 @@ export const getEmotions = onCall(async (request) => {
   }
 });
 
-export const testFirestore = onCall(async (request) => {
-  try {
-    const snapshot = await db.collection("users").get();
-    const userIds = snapshot.docs.map((doc) => doc.id);
-    return {userIds};
-  } catch (error: any) {
-    return {error: error.message};
-  }
-});
+// export const testFirestore = onCall(async (request) => {
+//   try {
+//     const snapshot = await db.collection("users").get();
+//     const userIds = snapshot.docs.map((doc) => doc.id);
+//     return {userIds};
+//   } catch (error: any) {
+//     return {error: error.message};
+//   }
+// });
 
 export const lastfmSearchforTracks = onCall(async (request) => {
   const {query} = request.data;
@@ -418,45 +418,50 @@ export const deleteAccount = onCall(async (request) => {
   }
 });
 
-// export const firstLogin = onCall(async (request) => {
-//   const {sessionKey, uid} = request.data;
-//   try {
-//     const userRef = db.collection("users").doc(uid);
-//     const userDoc = await userRef.get();
-//     if (userDoc.exists && userDoc.data()?.userinfo?.realname) {
-//       return {success: true, message: "User info already exists"};
-//     }
-//     const lastfmData = await LastfmUserInfoDirect(sessionKey);
-//     const realname = lastfmData.user?.realname || null;
+export const firstLogin = onCall(async (request) => {
+  const {sessionKey, uid} = request.data;
+  try {
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+    if (userDoc.exists && userDoc.data()?.userInfo?.realname) {
+      return {success: true, message: "User info already exists"};
+    }
+    const response = await fetch(
+      `https://ws.audioscrobbler.com/2.0/?method=user.getInfo&api_key=${API_KEY}&sk=${sessionKey}&format=json`,
+    );
+    const lastfmData = await response.json();
+    if ("error" in lastfmData) {
+      throw new Error(lastfmData.message || "Failed to fetch user info");
+    }
+    const realname = lastfmData.user?.realname || null;
 
-//     await userRef.set(
-//       {
-//         userinfo: {
-//           realname,
-//           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-//         },
-//       },
-//       {merge: true}
-//     );
-//     return {success: true};
-//   } catch (err) {
-//     logger.error("Error in first login:", err);
-//     throw new Error("Failed to fetch real name");
-//   }
-// });
+    await userRef.set(
+      {
+        userInfo: {
+          realname,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      },
+      {merge: true}
+    );
+    return {success: true};
+  } catch (err) {
+    logger.error("Error in first login:", err);
+    throw new Error("Failed to fetch real name");
+  }
+});
 
-// export const fetchRealname = onCall(async (request) => {
-//   const {sessionKey} = request.data;
-//   try {
-//     const userDoc = await db.collection("users").doc(sessionKey).get();
-//     if (userDoc.exists) {
-//       const realname = userDoc.data()?.userinfo?.realname || null;
-//       return {realname};
-//     }
-//     return {realname: null};
-//   } catch (error) {
-//     logger.error("Error fetching real name from database", error);
-//     throw new Error("Failed to fetch real name from dataase");
-//   }
-// });
-
+export const fetchRealname = onCall(async (request) => {
+  const {sessionKey} = request.data;
+  try {
+    const userDoc = await db.collection("users").doc(sessionKey).get();
+    if (!userDoc.exists) {
+      throw new Error("User not found");
+    }
+    const realname = userDoc.data()?.userInfo?.realname || null;
+    return {success: true, realname};
+  } catch (err) {
+    logger.error("Error fetching real name", err);
+    throw new Error("Failed to fetch real name");
+  }
+});
