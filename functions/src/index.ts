@@ -452,16 +452,22 @@ export const firstLogin = onCall(async (request) => {
 });
 
 export const fetchRealname = onCall(async (request) => {
-  const {sessionKey} = request.data;
   try {
-    const userDoc = await db.collection("users").doc(sessionKey).get();
-    if (!userDoc.exists) {
-      throw new Error("User not found");
+    const userRef = db.collection("users").doc(
+      "fZtGuqbsqdkNjn4bx-TORu8iyIy3Q_WS");
+    const userDoc = await userRef.get();
+    if (userDoc.exists && userDoc.data()?.userInfo?.username) {
+      const result = {success: true, realname: userDoc.data()?.
+        userInfo?.username};
+      console.log("Success:", result);
+      return result;
     }
-    const realname = userDoc.data()?.userInfo?.realname || null;
-    return {success: true, realname};
-  } catch (err) {
-    logger.error("Error fetching real name", err);
-    throw new Error("Failed to fetch real name");
+    const result = {success: false, message: "User info not found"};
+    console.log("Failure:", result);
+    return result;
+  } catch (error) {
+    console.log("Error details", error);
+    logger.error("Error in fetching name", error);
+    throw new Error("Failed to fetch real name.");
   }
 });
