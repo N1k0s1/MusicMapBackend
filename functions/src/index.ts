@@ -211,12 +211,14 @@ interface EmotionData {
   trackTitle: string;
   artist: string;
   emotion: string;
+  group: string;
+  broadgroup: string;
   timestamp: number;
 }
 
 export const storeEmotion = onCall(async (request) => {
-  const {sessionKey, trackId, trackTitle, artist, emotion} = request.data;
-
+  const {sessionKey, trackId, trackTitle, artist, group, broadgroup, emotion}=
+  request.data;
   if (!sessionKey || !trackId || !trackTitle || !artist || !emotion) {
     throw new Error("Missing the required fields");
   }
@@ -227,6 +229,8 @@ export const storeEmotion = onCall(async (request) => {
       trackTitle,
       artist,
       emotion,
+      group,
+      broadgroup,
       timestamp: Date.now(),
     };
 
@@ -292,7 +296,7 @@ export const getEmotions = onCall(async (request) => {
 
     return {emotions};
   } catch (error) {
-    logger.error("Error in getEmotions:", error);
+    logger.error("Error fetching emotions", error);
     throw new Error("Failed to fetch emotions");
   }
 });
@@ -453,12 +457,16 @@ export const firstLogin = onCall(async (request) => {
 
 export const fetchRealname = onCall(async (request) => {
   try {
-    const userRef = db.collection("users").doc(
-      "fZtGuqbsqdkNjn4bx-TORu8iyIy3Q_WS");
+    const {sessionKey} = request.data;
+    if (!sessionKey) {
+      throw new Error("Missing session key");
+    }
+    const userRef = db.collection("users")
+      .doc(sessionKey);
     const userDoc = await userRef.get();
-    if (userDoc.exists && userDoc.data()?.userInfo?.username) {
+    if (userDoc.exists && userDoc.data()?.userInfo?.realname) {
       const result = {success: true, realname: userDoc.data()?.
-        userInfo?.username};
+        userInfo?.realname};
       console.log("Success:", result);
       return result;
     }
@@ -468,6 +476,90 @@ export const fetchRealname = onCall(async (request) => {
   } catch (error) {
     console.log("Error details", error);
     logger.error("Error in fetching name", error);
-    throw new Error("Failed to fetch real name.");
+    throw new Error("Failed to fetch real name");
   }
+});
+
+interface PlaylistData {
+  group: string;
+  name: string;
+  emotions: string[];
+  songs: Array<{
+    trackId: string;
+    trackTitle: string;
+    artist: string;
+    emotion: string;
+  }>;
+  createdAt: number;
+}
+
+export const createPlaylists = onCall(async (request) => {
+  const {sessionKey, group, name, emotions} = request.data;
+  if (!sessionKey || !group || !emotions || emotions.length === 0) {
+    throw new Error("Missing sessionkey or emotion");
+  }
+  try {
+    const emotionsSnapshot = await db.collection("users")
+      .doc(sessionKey)
+      .collection("emotions")
+      .where("group", "in", emotions)
+      .get();
+
+    if (emotionsSnapshot.empty) {
+      throw new Error("No songs found with that grouping");
+    }
+    const songs = emotionsSnapshot.docs.map((doc) => ({
+      trackId: doc.data().trackId,
+      trackTitle: doc.data().trackTitle,
+      artist: doc.data().artist,
+      emotion: doc.data().group,
+    }));
+    const playlistData: PlaylistData = {
+      name,
+      group,
+      emotions,
+      songs,
+      createdAt: Date.now(),
+    };
+    await db.collection("users")
+      .doc(sessionKey)
+      .collection("playlists")
+      .add(playlistData);
+
+    return {success: true, playlistId: playlistData.group};
+  } catch (error) {
+    logger.error("Error creating playlist", error);
+    throw new Error("Failed to create the playlist");
+  }
+});
+
+export const fetchPlaylistname = onCall(async (request) => {
+  const {sessionKey} = request.data;
+  console.log(sessionKey);
+  if (!sessionKey) {
+    throw new Error("Session Key Required");
+  }
+  try {
+    const playlistsSnapshot = await db.collection("users")
+      .doc(sessionKey)
+      .collection("playlists")
+      .get();
+    if (playlistsSnapshot.empty) {
+      return {success: true, playlists: []};
+    }
+    const playlists = playlistsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      name: doc.data().name,
+    }));
+    console.log(playlists);
+    return {success: true, playlists};
+  } catch (error) {
+    logger.error("Error fetching playlist names", error);
+    throw new Error("Failed to fetch playlist names");
+  }
+});
+
+export const testSessionKey = onCall(async (request) => {
+  const {sessionKey} = request.data;
+  console.log(sessionKey);
 });
