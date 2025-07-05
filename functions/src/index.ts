@@ -484,6 +484,7 @@ interface PlaylistData {
   group: string;
   name: string;
   emotions: string[];
+  color: string;
   songs: Array<{
     trackId: string;
     trackTitle: string;
@@ -494,7 +495,7 @@ interface PlaylistData {
 }
 
 export const createPlaylists = onCall(async (request) => {
-  const {sessionKey, group, name, emotions} = request.data;
+  const {sessionKey, group, name, emotions, color} = request.data;
   if (!sessionKey || !group || !emotions || emotions.length === 0) {
     throw new Error("Missing sessionkey or emotion");
   }
@@ -506,19 +507,21 @@ export const createPlaylists = onCall(async (request) => {
       .get();
 
     if (emotionsSnapshot.empty) {
-      throw new Error("No songs found with that grouping");
+      throw new Error("No songs found with those groups");
     }
     const songs = emotionsSnapshot.docs.map((doc) => ({
       trackId: doc.data().trackId,
       trackTitle: doc.data().trackTitle,
       artist: doc.data().artist,
-      emotion: doc.data().group,
+      emotion: doc.data().emotion,
+      color: doc.data().color || "",
     }));
     const playlistData: PlaylistData = {
       name,
       group,
       emotions,
       songs,
+      color,
       createdAt: Date.now(),
     };
     await db.collection("users")
@@ -537,7 +540,7 @@ export const fetchPlaylistname = onCall(async (request) => {
   const {sessionKey} = request.data;
   console.log(sessionKey);
   if (!sessionKey) {
-    throw new Error("Session Key Required");
+    throw new Error("Sessionkey required");
   }
   try {
     const playlistsSnapshot = await db.collection("users")
@@ -550,6 +553,9 @@ export const fetchPlaylistname = onCall(async (request) => {
     const playlists = playlistsSnapshot.docs.map((doc) => ({
       id: doc.id,
       name: doc.data().name,
+      timestamp: doc.data().createdAt,
+      group: doc.data().emotions,
+      color: doc.data().color || "#000000",
     }));
     console.log(playlists);
     return {success: true, playlists};
